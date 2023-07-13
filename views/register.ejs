@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Admin Registration</title>
+  </head>
+  <body>
+    <h1>Admin Registration</h1>
+    <% if (error) { %>
+      <p style="color: red;"><%= error %></p>
+    <% } else if (success) { %>
+      <p style="color: green;"><%= success %></p>
+    <% } %>
+    <form action="/register" method="post">
+      <input type="text" name="username" placeholder="Username" required /><br />
+      <input type="password" name="password" placeholder="Password" required /><br />
+      <input type="submit" value="Register" />
+    </form>
+  </body>
+</html>
