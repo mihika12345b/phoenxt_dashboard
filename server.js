@@ -1,6 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2');
 const bcrypt = require('bcrypt');
+const path = require('path');
 const app = express();
 const port = 3000;
 
@@ -8,7 +9,7 @@ const port = 3000;
 const connection = mysql.createConnection({
   host: 'localhost',
   user: 'root',
-//  password: 'your_mysql_password', // Replace 'your_mysql_password' with your actual MySQL root password
+  // password: 'your_mysql_password', // Replace 'your_mysql_password' with your actual MySQL root password
   database: 'admin_login',
   authPlugins: {
     mysql_clear_password: () => () => Buffer.from('your_mysql_password' + '\0')
@@ -27,10 +28,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // sets the view engine to EJS
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
 // creates routes
 app.get('/', (req, res) => {
-  res.redirect('/register');
+  res.redirect('/login');
 });
 
 app.get('/register', (req, res) => {
@@ -38,10 +40,10 @@ app.get('/register', (req, res) => {
 });
 
 app.post('/register', (req, res) => {
-  const { username, password } = req.body;
+  const { firstName, lastName, email, password } = req.body;
 
-  if (!username || !password) {
-    res.render('register', { error: 'Please enter both username and password', success: null });
+  if (!firstName || !lastName || !email || !password) {
+    res.render('register', { error: 'Please enter all the required fields', success: null });
     return;
   }
 
@@ -49,7 +51,9 @@ app.post('/register', (req, res) => {
     if (err) throw err;
 
     const newUser = {
-      username: username,
+      firstName: firstName,
+      lastName: lastName,
+      email: email,
       password: hashedPassword
     };
 
@@ -64,26 +68,30 @@ app.post('/register', (req, res) => {
   });
 });
 
+app.get('/login', (req, res) => {
+  res.render('login', { error: null });
+});
+
 app.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { email, password } = req.body;
 
   console.log('Received form data:');
-  console.log('Username:', username);
+  console.log('Email:', email);
   console.log('Password:', password);
 
-  if (!username || !password) {
-    res.render('index', { error: 'Please enter both username and password' });
+  if (!email || !password) {
+    res.render('login', { error: 'Please enter both email and password' });
     return;
   }
 
-  connection.query('SELECT * FROM users WHERE username = ?', [username], (err, results) => {
+  connection.query('SELECT * FROM users WHERE email = ?', [email], (err, results) => {
     if (err) {
       console.error('Error executing the MySQL query:', err);
       return;
     }
 
     if (results.length === 0) {
-      res.render('index', { error: 'Invalid username or password' });
+      res.render('login', { error: 'No account registered with this email or password' });
       return;
     }
 
@@ -93,11 +101,24 @@ app.post('/login', (req, res) => {
       if (err) throw err;
 
       if (isMatch) {
-        res.render('dashboard', { username: user.username });
+        res.redirect('/main');
       } else {
-        res.render('index', { error: 'Invalid username or password' });
+        res.render('login', { error: 'No account registered with this email or password' });
       }
     });
+  });
+});
+
+app.get('/main', (req, res) => {
+  // Fetch all users from the database
+  connection.query('SELECT * FROM users', (err, results) => {
+    if (err) {
+      console.error('Error executing the MySQL query:', err);
+      return;
+    }
+
+    // Render the 'main' view and pass the user data
+    res.render('main', { users: results });
   });
 });
 
