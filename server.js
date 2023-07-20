@@ -4,13 +4,22 @@ const crypto = require('crypto');
 const path = require('path');
 const app = express();
 const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
 const port = 3000;
+
+const transporter = nodemailer.createTransport({
+  service: 'Gmail',
+  auth: {
+    user: 'miksbhatnagar@gmail.com',
+    pass: 'ouorgwgodfeqnmwp'
+  }
+});
 
 // configures connection to MySQL
 const connection = mysql.createConnection({
   host: 'localhost',
   user: 'root',
-  // password: 'your_mysql_password', // Replace 'your_mysql_password' with your actual MySQL root password
+  // password: 'your_mysql_password'
   database: 'admin_login',
   authPlugins: {
     mysql_clear_password: () => () => Buffer.from('your_mysql_password' + '\0')
@@ -127,39 +136,44 @@ app.get('/main', (req, res) => {
 });
 
 app.get('/forgot-password', (req, res) => {
-  res.render('forgot-password', { error: null });
+  res.render('forgot-password', { error: null, success: null });
 });
 
-// handles password reset form submission
 app.post('/forgot-password', (req, res) => {
   const { email } = req.body;
 
-  if (!email) {
-    res.render('forgot-password', { error: 'Please enter your email' });
-    return;
-  }
+  // Generate a random reset code
+  const resetCode = crypto.randomBytes(32).toString('hex');
+  
+  // Calculate the reset code expiration time (e.g., 1 hour from now)
+  const expirationTime = new Date(Date.now() + 1 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
 
-  // generates a unique reset code
-  const resetCode = crypto.randomBytes(20).toString('hex');
-  const resetExpiration = new Date(Date.now() + 3600000); // reset code valid for 1 hour
-
-  // stores  reset code and its expiration time in the database
-  connection.query(
-    'UPDATE users SET reset_code = ?, reset_expiration = ? WHERE email = ?',
-    [resetCode, resetExpiration, email],
-    (err, result) => {
-      if (err) {
-        console.error('Error executing the MySQL query:', err);
-        res.render('forgot-password', { error: 'Error sending reset code' });
-        return;
-      }
-
-      // sends reset code to the user's email (implement this using a library like Nodemailer)
-      console.log('Reset code:', resetCode);
-
-      res.render('forgot-password', { success: 'Reset code sent to your email', error: null });
+  // Update the reset_code and reset_expiration columns in the database for the user
+  connection.query('UPDATE users SET reset_code = ?, reset_expiration = ? WHERE email = ?', [resetCode, expirationTime, email], (err, result) => {
+    if (err) {
+      console.error('Error executing the MySQL query:', err);
+      res.render('forgot-password', { error: 'Error resetting password', success: null });
+      return;
     }
-  );
+
+    // Send the reset email
+    const mailOptions = {
+      from: 'your_email@example.com', // Replace with your email address
+      to: email,
+      subject: 'Password Reset',
+      text: `Here is your reset code: ${resetCode}`
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.log(error);
+        res.render('forgot-password', { error: 'Error sending reset code', success: null });
+      } else {
+        console.log('Email sent: ' + info.response);
+        res.render('forgot-password', { success: 'Reset code sent successfully!', error: null });
+      }
+    });
+  });
 });
 
 // renders  password reset page
