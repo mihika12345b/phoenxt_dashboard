@@ -1,8 +1,9 @@
 const express = require('express');
 const mysql = require('mysql2');
-const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const path = require('path');
 const app = express();
+const bcrypt = require('bcrypt');
 const port = 3000;
 
 // configures connection to MySQL
@@ -48,11 +49,15 @@ app.post('/register', (req, res) => {
   }
 
   bcrypt.hash(password, 10, (err, hashedPassword) => {
-    if (err) throw err;
+    if (err) {
+      console.error('Error hashing password:', err);
+      res.render('register', { error: 'Error registering user', success: null });
+      return;
+    }
 
     const newUser = {
-      firstName: firstName,
-      lastName: lastName,
+      first_name: firstName,
+      last_name: lastName,
       email: email,
       password: hashedPassword
     };
@@ -60,6 +65,7 @@ app.post('/register', (req, res) => {
     connection.query('INSERT INTO users SET ?', newUser, (err, result) => {
       if (err) {
         console.error('Error executing the MySQL query:', err);
+        res.render('register', { error: 'Error registering user', success: null });
         return;
       }
 
@@ -101,7 +107,7 @@ app.post('/login', (req, res) => {
       if (err) throw err;
 
       if (isMatch) {
-        res.redirect('/main');
+        res.render('main', { users: results });
       } else {
         res.render('login', { error: 'No account registered with this email or password' });
       }
@@ -110,15 +116,101 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/main', (req, res) => {
-  // Fetch all users from the database
   connection.query('SELECT * FROM users', (err, results) => {
     if (err) {
       console.error('Error executing the MySQL query:', err);
       return;
     }
 
-    // Render the 'main' view and pass the user data
     res.render('main', { users: results });
+  });
+});
+
+app.get('/forgot-password', (req, res) => {
+  res.render('forgot-password', { error: null });
+});
+
+// handles password reset form submission
+app.post('/forgot-password', (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    res.render('forgot-password', { error: 'Please enter your email' });
+    return;
+  }
+
+  // generates a unique reset code
+  const resetCode = crypto.randomBytes(20).toString('hex');
+  const resetExpiration = new Date(Date.now() + 3600000); // reset code valid for 1 hour
+
+  // stores  reset code and its expiration time in the database
+  connection.query(
+    'UPDATE users SET reset_code = ?, reset_expiration = ? WHERE email = ?',
+    [resetCode, resetExpiration, email],
+    (err, result) => {
+      if (err) {
+        console.error('Error executing the MySQL query:', err);
+        res.render('forgot-password', { error: 'Error sending reset code' });
+        return;
+      }
+
+      // sends reset code to the user's email (implement this using a library like Nodemailer)
+      console.log('Reset code:', resetCode);
+
+      res.render('forgot-password', { success: 'Reset code sent to your email', error: null });
+    }
+  );
+});
+
+// renders  password reset page
+app.get('/reset-password/:resetCode', (req, res) => {
+  const resetCode = req.params.resetCode;
+
+  // checks if reset code is valid and not expired
+  connection.query('SELECT * FROM users WHERE reset_code = ? AND reset_expiration > ?', [resetCode, new Date()], (err, results) => {
+    if (err) {
+      console.error('Error executing the MySQL query:', err);
+      res.render('login', { error: 'Error resetting password' });
+      return;
+    }
+
+    if (results.length === 0) {
+      res.render('login', { error: 'Invalid or expired reset code' });
+      return;
+    }
+
+    res.render('reset-password', { resetCode: resetCode, error: null });
+  });
+});
+
+// Handle the password reset page form submission
+app.post('/reset-password/:resetCode', (req, res) => {
+  const resetCode = req.params.resetCode;
+  const newPassword = req.body.password;
+
+  if (!newPassword) {
+    res.render('reset-password', { resetCode: resetCode, error: 'Please enter a new password' });
+    return;
+  }
+
+  // Hash the new password using bcrypt
+  bcrypt.hash(newPassword, 10, (err, hashedPassword) => {
+    if (err) {
+      console.error('Error hashing password:', err);
+      res.render('reset-password', { resetCode: resetCode, error: 'Error resetting password' });
+      return;
+    }
+
+    // Update the user's password in the database
+    connection.query('UPDATE users SET password = ?, reset_code = NULL, reset_expiration = NULL WHERE reset_code = ?', [hashedPassword, resetCode], (err, result) => {
+      if (err) {
+        console.error('Error executing the MySQL query:', err);
+        res.render('reset-password', { resetCode: resetCode, error: 'Error resetting password' });
+        return;
+      }
+
+      res.redirect('/login');
+    });
   });
 });
 
